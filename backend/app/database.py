@@ -1,42 +1,27 @@
 import os
-import sys
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./route53.db")
+# 1. Determine a deterministic, deployment-safe path for the SQLite database
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_DB_PATH = BASE_DIR / "route53.db"
+DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"
 
-# Mask password in URL for safe logging
-def get_masked_url(url: str) -> str:
-    try:
-        if "@" in url:
-            parts = url.split("@")
-            prefix = parts[0]
-            suffix = parts[1]
-            if ":" in prefix:
-                subparts = prefix.split(":")
-                # scheme://user:***
-                return f"{subparts[0]}:{subparts[1]}:***@{suffix}"
-        return url
-    except Exception:
-        return "invalid-url-format"
+# 2. Get DATABASE_URL and fallback if it is missing or empty
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL or DATABASE_URL.strip() == "":
+    DATABASE_URL = DEFAULT_DATABASE_URL
 
-print(f"DEBUG: Original URL (Masked): {get_masked_url(DATABASE_URL)}", flush=True)
-
-# Render databases use postgres://, which SQLAlchemy 2.0 deprecated in favor of postgresql://
+# 3. For Render PostgreSQL compatibility, change postgres:// to postgresql:// if needed
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-print(f"DEBUG: Final URL (Masked): {get_masked_url(DATABASE_URL)}", flush=True)
-
-# check_same_thread is only needed for SQLite
+# 4. check_same_thread is only needed for SQLite
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-try:
-    engine = create_engine(DATABASE_URL, connect_args=connect_args)
-except Exception as e:
-    print(f"ERROR: Failed to create engine for URL: {get_masked_url(DATABASE_URL)}. Details: {e}", flush=True)
-    raise e
-
+# 5. Create SQLAlchemy Engine
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
